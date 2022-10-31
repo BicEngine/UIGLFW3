@@ -10,7 +10,6 @@ use Bic\Image\ConverterInterface;
 use Bic\Image\Exception\CompressionException;
 use Bic\Image\ImageInterface;
 use Bic\Image\PixelFormat;
-use Bic\Lib\GLFW3;
 use Bic\UI\EventInterface;
 use Bic\UI\FactoryInterface;
 use Bic\UI\ManagerInterface;
@@ -33,7 +32,7 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     private readonly \SplQueue $events;
 
     /**
-     * @param object|GLFW3 $ffi
+     * @param object $ffi
      * @param ConverterInterface $converter
      */
     public function __construct(

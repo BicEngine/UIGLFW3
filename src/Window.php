@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Bic\UI\GLFW3;
 
-use Bic\Lib\GLFW3;
 use Bic\UI\EventInterface;
 use Bic\UI\GLFW3\Internal\Keyboard;
 use Bic\UI\Keyboard\Event\KeyDownEvent;
@@ -63,7 +62,7 @@ final class Window implements WindowInterface
     private readonly Size $size;
 
     /**
-     * @param object|GLFW3 $ffi
+     * @param object $ffi
      * @param CData $window
      * @param CreateInfo $info
      * @param \SplQueue<EventInterface> $events
