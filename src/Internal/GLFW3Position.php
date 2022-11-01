@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Bic\UI\GLFW3;
+namespace Bic\UI\GLFW3\Internal;
 
 use Bic\UI\Window\Position;
 use FFI\CData;

@@ -7,14 +7,18 @@ namespace Bic\UI\GLFW3;
 use Bic\Image\Converter;
 use Bic\Image\ConverterInterface;
 use Bic\Image\Exception\CompressionException;
-use Bic\Image\ImageInterface;
 use Bic\UI\EventInterface;
 use Bic\UI\FactoryInterface;
 use Bic\UI\GLFW3\Internal\CursorLoader;
 use Bic\UI\GLFW3\Internal\ImageLoader;
-use Bic\UI\GLFW3\GLFW3Window;
+use Bic\UI\GLFW3\Internal\GLFW3Window;
 use Bic\UI\ManagerInterface;
 use Bic\UI\Window\CreateInfo;
+use Bic\UI\Window\Handle\AppleHandle;
+use Bic\UI\Window\Handle\WaylandHandle;
+use Bic\UI\Window\Handle\Win32Handle;
+use Bic\UI\Window\Handle\XLibHandle;
+use Bic\UI\Window\HandleInterface;
 use Bic\UI\Window\Mode;
 use Bic\UI\Window\WindowInterface;
 use FFI\CData;
@@ -48,18 +52,27 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     private readonly CursorLoader $cursorLoader;
 
     /**
+     * @var Platform
+     */
+    private readonly Platform $platform;
+
+    /**
      * @psalm-taint-sink file $library
+     *
      * @param non-empty-string $library
+     * @param Platform|null $platform
      * @param ConverterInterface $converter
      */
     public function __construct(
         private readonly string $library,
+        Platform $platform = null,
         ConverterInterface $converter = new Converter(),
     ) {
         Runtime::assertAvailable();
 
-        $headers = \file_get_contents(__DIR__ . '/../resources/glfw-3.0.min.h');
-        $this->ffi = \FFI::cdef($headers, $this->library);
+        $this->platform = $platform ?? Platform::current();
+
+        $this->ffi = \FFI::cdef($this->getHeaders(), $this->library);
 
         $this->events = new \SplQueue();
         $this->windows = new \SplObjectStorage();
@@ -70,6 +83,46 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
         $this->assertVersion();
 
         $this->ffi->glfwInit();
+    }
+
+    /**
+     * @param CData $window
+     *
+     * @return HandleInterface
+     */
+    private function getHandle(CData $window): HandleInterface
+    {
+        return match ($this->platform) {
+            Platform::WIN32 => new Win32Handle($this->ffi->glfwGetWin32Window($window)),
+            Platform::COCOA => new AppleHandle($this->ffi->glfwGetCocoaWindow($window)),
+            Platform::WAYLAND => new WaylandHandle($this->ffi->glfwGetWaylandWindow($window)),
+            Platform::X11 => new XLibHandle($this->ffi->glfwGetX11Window($window)),
+        };
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function getHeaders(): string
+    {
+        $headers = \file_get_contents(__DIR__ . '/../resources/glfw-3.2.min.h');
+
+        return $headers . "\n" . match ($this->platform) {
+            Platform::WIN32 => <<<'CDATA'
+                void* glfwGetWin32Window(GLFWwindow* window);
+            CDATA,
+            Platform::COCOA => <<<'CDATA'
+                struct id* glfwGetCocoaWindow(GLFWwindow* window);
+            CDATA,
+            Platform::WAYLAND => <<<'CDATA'
+                struct wl_surface* glfwGetWaylandWindow(GLFWwindow* window);
+            CDATA,
+            Platform::X11 => <<<'CDATA'
+                typedef unsigned long XID;
+                typedef XID Window;
+                Window glfwGetX11Window(GLFWwindow* window);
+            CDATA,
+        };
     }
 
     /**
@@ -137,6 +190,7 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
         return new GLFW3Window(
             $this->ffi,
             $window,
+            $this->getHandle($window),
             $info,
             $this->imageLoader,
             $this->cursorLoader,

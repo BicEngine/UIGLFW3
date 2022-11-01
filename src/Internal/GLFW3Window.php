@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Bic\UI\GLFW3;
+namespace Bic\UI\GLFW3\Internal;
 
 use Bic\UI\EventInterface;
-use Bic\UI\GLFW3\Internal\CursorLoader;
-use Bic\UI\GLFW3\Internal\ImageLoader;
-use Bic\UI\GLFW3\Internal\Keyboard;
+use Bic\UI\GLFW3\Internal\GLFW3Position;
+use Bic\UI\GLFW3\Internal\GLFW3Size;
 use Bic\UI\Keyboard\Event\KeyDownEvent;
 use Bic\UI\Keyboard\Event\KeyUpEvent;
 use Bic\UI\Mouse\Button;
@@ -19,7 +18,6 @@ use Bic\UI\Mouse\UserButton;
 use Bic\UI\Mouse\Wheel;
 use Bic\UI\Window\CursorInterface;
 use Bic\UI\Window\IconInterface;
-use Bic\UI\Window\Position;
 use Bic\UI\Window\CreateInfo;
 use Bic\UI\Window\Event\WindowBlurEvent;
 use Bic\UI\Window\Event\WindowCloseEvent;
@@ -31,7 +29,6 @@ use Bic\UI\Window\Event\WindowShowEvent;
 use Bic\UI\Window\HandleInterface;
 use Bic\UI\Window\ProvidesPositionInterface;
 use Bic\UI\Window\ProvidesSizeInterface;
-use Bic\UI\Window\Size;
 use Bic\UI\Window\Window;
 use FFI\CData;
 
@@ -68,6 +65,7 @@ final class GLFW3Window extends Window
     public function __construct(
         private readonly object $ffi,
         private readonly CData $window,
+        HandleInterface $handle,
         private readonly CreateInfo $info,
         private readonly ImageLoader $imageLoader,
         private readonly CursorLoader $cursorLoader,
@@ -95,7 +93,7 @@ final class GLFW3Window extends Window
                 x: $this->info->position?->x ?? $x->cdata,
                 y: $this->info->position?->y ?? $y->cdata
             ),
-            handle: new class implements HandleInterface {},
+            handle: $handle,
         );
 
         $this->createEventListeners();
