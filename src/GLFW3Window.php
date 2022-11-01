@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Bic\UI\GLFW3;
 
 use Bic\UI\EventInterface;
+use Bic\UI\GLFW3\Internal\CursorLoader;
+use Bic\UI\GLFW3\Internal\ImageLoader;
 use Bic\UI\GLFW3\Internal\Keyboard;
 use Bic\UI\Keyboard\Event\KeyDownEvent;
 use Bic\UI\Keyboard\Event\KeyUpEvent;
@@ -15,6 +17,8 @@ use Bic\UI\Mouse\Event\MouseUpEvent;
 use Bic\UI\Mouse\Event\MouseWheelEvent;
 use Bic\UI\Mouse\UserButton;
 use Bic\UI\Mouse\Wheel;
+use Bic\UI\Window\CursorInterface;
+use Bic\UI\Window\IconInterface;
 use Bic\UI\Window\Position;
 use Bic\UI\Window\CreateInfo;
 use Bic\UI\Window\Event\WindowBlurEvent;
@@ -25,26 +29,22 @@ use Bic\UI\Window\Event\WindowMoveEvent;
 use Bic\UI\Window\Event\WindowResizeEvent;
 use Bic\UI\Window\Event\WindowShowEvent;
 use Bic\UI\Window\HandleInterface;
+use Bic\UI\Window\ProvidesPositionInterface;
+use Bic\UI\Window\ProvidesSizeInterface;
 use Bic\UI\Window\Size;
-use Bic\UI\Window\WindowInterface;
+use Bic\UI\Window\Window;
 use FFI\CData;
 
-final class Window implements WindowInterface
+/**
+ * @internal This is an internal library class, please do not use it in your code.
+ * @psalm-internal Bic\UI\GLFW3
+ */
+final class GLFW3Window extends Window
 {
     /**
      * @var bool
      */
     private bool $closed = false;
-
-    /**
-     * @var string
-     */
-    private string $title;
-
-    /**
-     * @var Position
-     */
-    private readonly Position $position;
 
     /**
      * @var int
@@ -57,14 +57,11 @@ final class Window implements WindowInterface
     private int $mouseY = 0;
 
     /**
-     * @var Size
-     */
-    private readonly Size $size;
-
-    /**
      * @param object $ffi
      * @param CData $window
      * @param CreateInfo $info
+     * @param ImageLoader $imageLoader
+     * @param CursorLoader $cursorLoader
      * @param \SplQueue<EventInterface> $events
      * @param \Closure(static):void $detach
      */
@@ -72,6 +69,8 @@ final class Window implements WindowInterface
         private readonly object $ffi,
         private readonly CData $window,
         private readonly CreateInfo $info,
+        private readonly ImageLoader $imageLoader,
+        private readonly CursorLoader $cursorLoader,
         private readonly \SplQueue $events,
         private readonly \Closure $detach,
     ) {
@@ -83,14 +82,20 @@ final class Window implements WindowInterface
 
         $this->title = $info->title;
 
-        $this->size = new Size(
-            $info->size->width,
-            $info->size->height,
-        );
-
-        $this->position = new Position(
-            $this->info->position?->x ?? $x->cdata,
-            $this->info->position?->y ?? $y->cdata
+        parent::__construct(
+            size: new GLFW3Size(
+                ffi: $this->ffi,
+                window: $this->window,
+                width: $info->size->width,
+                height: $info->size->height
+            ),
+            position: new GLFW3Position(
+                ffi: $this->ffi,
+                window: $this->window,
+                x: $this->info->position?->x ?? $x->cdata,
+                y: $this->info->position?->y ?? $y->cdata
+            ),
+            handle: new class implements HandleInterface {},
         );
 
         $this->createEventListeners();
@@ -121,12 +126,6 @@ final class Window implements WindowInterface
             } else {
                 $this->events->push(new WindowBlurEvent($this));
             }
-        });
-
-        $this->ffi->glfwSetCursorPosCallback($this->window, function (CData $_, float $x, float $y) {
-            $this->mouseX = (int)$x;
-            $this->mouseY = (int)$y;
-            $this->events->push(new MouseMoveEvent($this, (int)$x, (int)$y));
         });
 
         $this->ffi->glfwSetMouseButtonCallback($this->window, function (CData $_, int $button, int $action) {
@@ -165,17 +164,18 @@ final class Window implements WindowInterface
             }
         });
 
-        $this->ffi->glfwSetWindowPosCallback($this->window, function (CData $_, int $x, int $y) {
-            $this->position->x = $x;
-            $this->position->y = $y;
+        $this->ffi->glfwSetCursorPosCallback($this->window, function (CData $_, float $x, float $y) {
+            $this->mouseX = (int)$x;
+            $this->mouseY = (int)$y;
 
+            $this->events->push(new MouseMoveEvent($this, (int)$x, (int)$y));
+        });
+
+        $this->ffi->glfwSetWindowPosCallback($this->window, function (CData $_, int $x, int $y) {
             $this->events->push(new WindowMoveEvent($this, $x, $y));
         });
 
         $this->ffi->glfwSetWindowSizeCallback($this->window, function (CData $_, int $w, int $h) {
-            $this->size->width = $w;
-            $this->size->height = $h;
-
             $this->events->push(new WindowResizeEvent($this, $w, $h));
         });
     }
@@ -183,42 +183,65 @@ final class Window implements WindowInterface
     /**
      * {@inheritDoc}
      */
-    public function getTitle(): string
-    {
-        return $this->title;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
     public function setTitle(string $title): void
     {
-        $this->title = $title;
+        parent::setTitle($title);
+
         $this->ffi->glfwSetWindowTitle($this->window, $title);
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    public function getSize(): Size
+    public function setIcon(?IconInterface $icon): void
     {
-        return $this->size;
+        parent::setIcon($icon);
+
+        if ($icon === null || $icon->count() === 0) {
+            $this->ffi->glfwSetWindowIcon($this->window, 0, null);
+
+            return;
+        }
+
+        $cdata = $this->ffi->new('GLFWimage[' . $icon->count() . ']');
+
+        foreach ($icon as $i => $image) {
+            $cdata[$i] = $this->imageLoader->load($image);
+        }
+
+        $this->ffi->glfwSetWindowIcon($this->window, $icon->count(), $cdata);
     }
 
     /**
      * {@inheritDoc}
      */
-    public function getPosition(): Position
+    public function setCursor(?CursorInterface $cursor): void
     {
-        return $this->position;
+        parent::setCursor($cursor);
+
+        if ($cursor === null) {
+            $this->ffi->glfwSetCursor($this->window, null);
+        } else {
+            $internal = $this->cursorLoader->load($cursor);
+            $this->ffi->glfwSetCursor($this->window, $internal);
+        }
     }
 
     /**
      * {@inheritDoc}
      */
-    public function getHandle(): HandleInterface
+    public function setSize(ProvidesSizeInterface $size): void
     {
-        throw new \LogicException(__METHOD__ . ' not implemented yet');
+        parent::setSize($size);
+
+        $this->ffi->glfwSetWindowSize($this->window, $size->getWidth(), $size->getHeight());
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function setPosition(ProvidesPositionInterface $position): void
+    {
+        parent::setPosition($position);
+
+        $this->ffi->glfwSetWindowPos($this->window, $position->x, $position->y);
     }
 
     /**
@@ -245,6 +268,17 @@ final class Window implements WindowInterface
         if (!$this->closed) {
             $this->events->push(new WindowCloseEvent($this));
             ($this->detach)($this);
+
+            $this->ffi->glfwSetWindowCloseCallback($this->window, null);
+            $this->ffi->glfwSetWindowIconifyCallback($this->window, null);
+            $this->ffi->glfwSetWindowFocusCallback($this->window, null);
+            $this->ffi->glfwSetMouseButtonCallback($this->window, null);
+            $this->ffi->glfwSetScrollCallback($this->window, null);
+            $this->ffi->glfwSetKeyCallback($this->window, null);
+            $this->ffi->glfwSetCursorPosCallback($this->window, null);
+            $this->ffi->glfwSetWindowPosCallback($this->window, null);
+            $this->ffi->glfwSetWindowSizeCallback($this->window, null);
+
             $this->ffi->glfwDestroyWindow($this->window);
         }
     }

@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Bic\UI\GLFW3;
 
-use Bic\Image\Compression;
 use Bic\Image\Converter;
 use Bic\Image\ConverterInterface;
 use Bic\Image\Exception\CompressionException;
 use Bic\Image\ImageInterface;
-use Bic\Image\PixelFormat;
 use Bic\UI\EventInterface;
 use Bic\UI\FactoryInterface;
+use Bic\UI\GLFW3\Internal\CursorLoader;
+use Bic\UI\GLFW3\Internal\ImageLoader;
+use Bic\UI\GLFW3\GLFW3Window;
 use Bic\UI\ManagerInterface;
 use Bic\UI\Window\CreateInfo;
 use Bic\UI\Window\Mode;
@@ -21,6 +22,11 @@ use FFI\Env\Runtime;
 
 final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggregate
 {
+    /**
+     * @var \FFI
+     */
+    private readonly \FFI $ffi;
+
     /**
      * @var \SplObjectStorage<WindowInterface>
      */
@@ -32,15 +38,34 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     private readonly \SplQueue $events;
 
     /**
-     * @param object $ffi
+     * @var ImageLoader
+     */
+    private readonly ImageLoader $imageLoader;
+
+    /**
+     * @var CursorLoader
+     */
+    private readonly CursorLoader $cursorLoader;
+
+    /**
+     * @psalm-taint-sink file $library
+     * @param non-empty-string $library
      * @param ConverterInterface $converter
      */
     public function __construct(
-        private readonly object $ffi,
-        private readonly ConverterInterface $converter = new Converter(),
+        private readonly string $library,
+        ConverterInterface $converter = new Converter(),
     ) {
-        $this->windows = new \SplObjectStorage();
+        Runtime::assertAvailable();
+
+        $headers = \file_get_contents(__DIR__ . '/../resources/glfw-3.0.min.h');
+        $this->ffi = \FFI::cdef($headers, $this->library);
+
         $this->events = new \SplQueue();
+        $this->windows = new \SplObjectStorage();
+
+        $this->imageLoader = new ImageLoader($this->ffi, $converter);
+        $this->cursorLoader = new CursorLoader($this->ffi, $this->imageLoader);
 
         $this->assertVersion();
 
@@ -66,26 +91,16 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     }
 
     /**
-     * @psalm-taint-sink file $pathname
-     * @param non-empty-string $pathname
-     *
-     * @return static
-     */
-    public static function fromLibrary(string $pathname): self
-    {
-        Runtime::assertAvailable();
-
-        $headers = \file_get_contents(__DIR__ . '/../resources/glfw-3.0.min.h');
-
-        return new self(\FFI::cdef($headers, $pathname));
-    }
-
-    /**
      * {@inheritDoc}
      */
-    public function create(CreateInfo $info = new CreateInfo()): Window
+    public function create(CreateInfo $info = new CreateInfo()): GLFW3Window
     {
-        $this->windows->attach($window = $this->instance($info));
+        $window = $this->instance($info);
+
+        $window->setIcon($info->icon);
+        $window->setCursor($info->cursor);
+
+        $this->windows->attach($window);
 
         return $window;
     }
@@ -93,13 +108,13 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     /**
      * @param CreateInfo $info
      *
-     * @return Window
+     * @return GLFW3Window
      * @throws CompressionException
      */
-    private function instance(CreateInfo $info): Window
+    private function instance(CreateInfo $info): GLFW3Window
     {
         // #define GLFW_RESIZABLE 0x00020003
-        // $this->ffi->glfwWindowHint(0x00020003, 0);
+        $this->ffi->glfwWindowHint(0x00020003, (int)$info->resizable);
         // #define GLFW_VISIBLE 0x00020004
         $this->ffi->glfwWindowHint(0x00020004, 0);
 
@@ -111,11 +126,6 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
             null,
         );
 
-        if ($info->icons !== []) {
-            $images = $info->icons instanceof ImageInterface ? [$info->icons] : [...$info->icons];
-            $this->setIcons($window, $images);
-        }
-
         if ($info->position === null) {
             $this->toCenter($window);
         }
@@ -124,36 +134,15 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
             $this->ffi->glfwShowWindow($window);
         }
 
-        return new Window($this->ffi, $window, $info, $this->events, $this->detach(...));
-    }
-
-    /**
-     * @param CData $window
-     * @param array<ImageInterface> $icons
-     *
-     * @return void
-     * @throws CompressionException
-     */
-    private function setIcons(CData $window, array $icons): void
-    {
-        $images = $this->ffi->new('GLFWimage[' . \count($icons) . ']');
-
-        foreach ($icons as $i => $icon) {
-            if ($icon->getCompression() !== Compression::NONE) {
-                throw new \InvalidArgumentException('Window icon cannot be compressed');
-            }
-
-            $converted = $this->converter->convert($icon, PixelFormat::R8G8B8A8);
-            $size = $converted->getBytes();
-
-            $images[$i]->width = $converted->getWidth();
-            $images[$i]->height = $converted->getHeight();
-            $images[$i]->pixels = \FFI::new("uint8_t[$size]", false);
-
-            \FFI::memcpy($images[$i]->pixels, $converted->getContents(), $size);
-        }
-
-        $this->ffi->glfwSetWindowIcon($window, \count($icons), $images);
+        return new GLFW3Window(
+            $this->ffi,
+            $window,
+            $info,
+            $this->imageLoader,
+            $this->cursorLoader,
+            $this->events,
+            $this->detach(...),
+        );
     }
 
     /**
