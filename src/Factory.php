@@ -23,6 +23,7 @@ use Bic\UI\Window\Mode;
 use Bic\UI\Window\WindowInterface;
 use FFI\CData;
 use FFI\Env\Runtime;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggregate
 {
@@ -65,6 +66,7 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
      */
     public function __construct(
         private readonly string $library,
+        private readonly ?EventDispatcherInterface $dispatcher = null,
         Platform $platform = null,
         ConverterInterface $converter = new Converter(),
     ) {
@@ -253,23 +255,16 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
      */
     public function run(): void
     {
-        if (\Fiber::getCurrent()) {
-            while ($this->windows->count() > 0) {
-                $this->ffi->glfwPollEvents();
-
-                while ($this->events->count() > 0) {
-                    \Fiber::suspend($this->events->shift());
-                }
-
-                \Fiber::suspend(); // NOOP
-            }
-        }
-
         while ($this->windows->count() > 0) {
             $this->ffi->glfwPollEvents();
+
             while ($this->events->count() > 0) {
-                $this->events->shift();
+                $event = $this->events->shift();
+                \Fiber::getCurrent() && \Fiber::suspend($event);
+                $this->dispatcher?->dispatch($event);
             }
+
+            \Fiber::getCurrent() && \Fiber::suspend(); // NOOP
         }
     }
 
