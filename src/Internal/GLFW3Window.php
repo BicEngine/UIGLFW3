@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Bic\UI\GLFW3\Internal;
 
 use Bic\UI\EventInterface;
-use Bic\UI\GLFW3\Internal\GLFW3Position;
-use Bic\UI\GLFW3\Internal\GLFW3Size;
 use Bic\UI\Keyboard\Event\KeyDownEvent;
 use Bic\UI\Keyboard\Event\KeyUpEvent;
 use Bic\UI\Mouse\Button;
@@ -170,10 +168,18 @@ final class GLFW3Window extends Window
         });
 
         $this->ffi->glfwSetWindowPosCallback($this->window, function (CData $_, int $x, int $y) {
+            if ($this->events->count() && $this->events->bottom() instanceof WindowMoveEvent) {
+                $this->events->shift();
+            }
+
             $this->events->push(new WindowMoveEvent($this, $x, $y));
         });
 
         $this->ffi->glfwSetWindowSizeCallback($this->window, function (CData $_, int $w, int $h) {
+            if ($this->events->count() && $this->events->bottom() instanceof WindowResizeEvent) {
+                $this->events->shift();
+            }
+
             $this->events->push(new WindowResizeEvent($this, $w, $h));
         });
     }
