@@ -27,6 +27,7 @@ use Bic\UI\Window\Event\WindowShowEvent;
 use Bic\UI\Window\HandleInterface;
 use Bic\UI\Window\ProvidesPositionInterface;
 use Bic\UI\Window\ProvidesSizeInterface;
+use Bic\UI\Window\SupportsOpenGLInterface;
 use Bic\UI\Window\Window;
 use FFI\CData;
 
@@ -34,7 +35,7 @@ use FFI\CData;
  * @internal This is an internal library class, please do not use it in your code.
  * @psalm-internal Bic\UI\GLFW3
  */
-final class GLFW3Window extends Window
+final class GLFW3Window extends Window implements SupportsOpenGLInterface
 {
     /**
      * @var bool
@@ -285,6 +286,30 @@ final class GLFW3Window extends Window
 
             $this->ffi->glfwDestroyWindow($this->window);
         }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function glMakeCurrent(): void
+    {
+        $this->ffi->glfwMakeContextCurrent($this->window);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function glSwapBuffers(): void
+    {
+        $this->ffi->glfwSwapBuffers($this->window);
+    }
+
+    /**
+     * @return CData
+     */
+    public function getCData(): CData
+    {
+        return $this->window;
     }
 
     /**

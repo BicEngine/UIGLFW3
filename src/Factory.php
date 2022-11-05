@@ -30,7 +30,7 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
     /**
      * @var \FFI
      */
-    private readonly \FFI $ffi;
+    public readonly \FFI $ffi;
 
     /**
      * @var \SplObjectStorage<WindowInterface>
@@ -112,6 +112,7 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
         return $headers . "\n" . match ($this->platform) {
             Platform::WIN32 => <<<'CDATA'
                 void* glfwGetWin32Window(GLFWwindow* window);
+                void* glfwGetWGLContext(GLFWwindow* window);
             CDATA,
             Platform::COCOA => <<<'CDATA'
                 struct id* glfwGetCocoaWindow(GLFWwindow* window);
@@ -172,6 +173,18 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
         $this->ffi->glfwWindowHint(0x00020003, (int)$info->resizable);
         // #define GLFW_VISIBLE 0x00020004
         $this->ffi->glfwWindowHint(0x00020004, 0);
+
+        // #define GLFW_CONTEXT_VERSION_MAJOR 0x00022002
+        $this->ffi->glfwWindowHint(0x00022002, 4);
+        // #define GLFW_CONTEXT_VERSION_MINOR 0x00022003
+        $this->ffi->glfwWindowHint(0x00022003, 6);
+
+        // #define GLFW_OPENGL_PROFILE 0x00022008
+        // #define GLFW_OPENGL_CORE_PROFILE 0x00032001
+        $this->ffi->glfwWindowHint(0x00022008, 0x00032001);
+
+        // #define GLFW_OPENGL_FORWARD_COMPAT 0x00022006
+        $this->ffi->glfwWindowHint(0x00022006, 1);
 
         $window = $this->ffi->glfwCreateWindow(
             $info->size->width,
