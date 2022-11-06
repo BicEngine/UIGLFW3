@@ -14,6 +14,7 @@ use Bic\UI\GLFW3\Internal\ImageLoader;
 use Bic\UI\GLFW3\Internal\GLFW3Window;
 use Bic\UI\ManagerInterface;
 use Bic\UI\Window\CreateInfo;
+use Bic\UI\Window\Event\WindowCreateEvent;
 use Bic\UI\Window\Handle\AppleHandle;
 use Bic\UI\Window\Handle\WaylandHandle;
 use Bic\UI\Window\Handle\Win32Handle;
@@ -157,6 +158,8 @@ final class Factory implements FactoryInterface, ManagerInterface, \IteratorAggr
         $window->setCursor($info->cursor);
 
         $this->windows->attach($window);
+
+        $this->dispatcher?->dispatch(new WindowCreateEvent($window));
 
         return $window;
     }
