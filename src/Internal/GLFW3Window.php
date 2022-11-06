@@ -169,16 +169,16 @@ final class GLFW3Window extends Window implements SupportsOpenGLInterface
         });
 
         $this->ffi->glfwSetWindowPosCallback($this->window, function (CData $_, int $x, int $y) {
-            if ($this->events->count() && $this->events->bottom() instanceof WindowMoveEvent) {
-                $this->events->shift();
+            if ($this->events->count() && $this->events->top() instanceof WindowMoveEvent) {
+                $this->events->pop();
             }
 
             $this->events->push(new WindowMoveEvent($this, $x, $y));
         });
 
         $this->ffi->glfwSetWindowSizeCallback($this->window, function (CData $_, int $w, int $h) {
-            if ($this->events->count() && $this->events->bottom() instanceof WindowResizeEvent) {
-                $this->events->shift();
+            if ($this->events->count() && $this->events->top() instanceof WindowResizeEvent) {
+                $this->events->pop();
             }
 
             $this->events->push(new WindowResizeEvent($this, $w, $h));
